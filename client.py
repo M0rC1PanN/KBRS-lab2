@@ -70,6 +70,9 @@ class SessionHandler:
                                      json=login_json,
                                      cookies=self.cookies) as resp:
             print(resp.status)
+            if resp.status != 200:
+                print(await resp.text())
+                return
             server_open_key = await resp.text()
             server_open_key = serialization \
                 .load_pem_public_key(server_open_key.encode("utf-8"))
@@ -81,7 +84,7 @@ class SessionHandler:
         async with self.session.post(f'{self.url}/get_doc',
                                      json=get_doc_json,
                                      cookies=self.cookies) as resp:
-            if resp.status == 404:
+            if resp.status != 200:
                 print(await resp.text())
                 return
             data = json.loads(await resp.text())
@@ -103,6 +106,13 @@ class SessionHandler:
     async def delete_doc(self, file_name):
         pass
         # delete_doc_json = {FILE_NAME: file_name}
+
+    async def logout(self):
+        async with self.session.post(f'{self.url}/logout',
+                                     cookies=self.cookies) as resp:
+            print(resp.status)
+            if resp.status != 200:
+                print(await resp.text())
 
 
 async def main():

@@ -1,5 +1,6 @@
 import os
 import uuid
+from datetime import datetime
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -38,9 +39,23 @@ class Server:
         ])
         self.users = {}
         self.shared_keys = {}
+        self.session_created = {}
+        self.expiration_interval_sec = 30
 
     def run_app(self):
         web.run_app(self.app)
+
+    def check_session(self, request):
+        session_id = request.cookies.get(SESSION_ID)
+        if session_id not in self.shared_keys or \
+                session_id not in self.session_created:
+            return False
+        sub_seconds_active = \
+            (datetime.now() - self.session_created[session_id]).total_seconds()
+        print(f'active: {sub_seconds_active}')
+        if sub_seconds_active > self.expiration_interval_sec:
+            return False
+        return True
 
     async def hello(self, request):
         return web.Response(text="Hello, world")
@@ -57,6 +72,7 @@ class Server:
         shared_key = private_key.exchange(ec.ECDH(), client_public_key)
 
         self.shared_keys[request.cookies[SESSION_ID]] = shared_key
+        self.session_created[request.cookies[SESSION_ID]] = datetime.now()
 
         # TODO: add key expiration
         print(f'session key for session {request.cookies[SESSION_ID]} '
@@ -86,6 +102,10 @@ class Server:
     async def login(self, request):
         json = await request.json()
         print(json)
+        if not self.users.get(json[LOGIN]):
+            return web.json_response(
+                text=f'User with login {json[LOGIN]} not registered',
+                status=400)
         user_pwd = self.users[json[LOGIN]]
         if user_pwd != json[PASSWORD]:
             return web.json_response(text='wrong password', status=404)
@@ -95,9 +115,20 @@ class Server:
         return web.json_response(text=server_public_key_decoded)
 
     async def logout(self, request):
-        pass
+        if not self.check_session(request):
+            return web.json_response(
+                text='Session key was not added or expired: login again.',
+                status=400)
+        session_id = request.cookies[SESSION_ID]
+        del self.session_created[session_id]
+        return web.json_response(status=200)
+
 
     async def get_doc(self, request):
+        if not self.check_session(request):
+            return web.json_response(
+                text='Session key was not added or expired: login again.',
+                status=400)
         json = await request.json()
         file_name = json[FILE_NAME]
 
@@ -113,10 +144,12 @@ class Server:
 
     async def add_doc(self, request):
         pass
+
     # msg: "file added"
 
     async def update_doc(self, request):
         pass
+
     # msg: "file updated" or "no such file"
 
     async def delete_doc(self, request):
