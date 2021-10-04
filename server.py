@@ -34,7 +34,6 @@ class Server:
             web.post('/logout', self.logout),
             web.post('/get_doc', self.get_doc),
             web.post('/add_doc', self.add_doc),
-            web.post('/update_doc', self.update_doc),
             web.post('/delete_doc', self.delete_doc),
         ])
         self.users = {}
@@ -143,17 +142,25 @@ class Server:
             return web.json_response(text=f"no such file: {ex}", status=404)
 
     async def add_doc(self, request):
-        pass
-
-    # msg: "file added"
-
-    async def update_doc(self, request):
-        pass
-
-    # msg: "file updated" or "no such file"
+        json = await request.json()
+        file_name = json[FILE_NAME]
+        iv = json[IV]
+        ct = json[CT]
+        text = decode_doc(ct, self.get_shared_key(request, base64.b64decode(iv.encode('ascii'))), iv)
+        with open(BASE_FILES_DIR + file_name, "wb") as f:
+            f.write(text)
+            print(text)
+        return web.json_response(text="file added")
 
     async def delete_doc(self, request):
-        pass
+        json = await request.json()
+        file_name = json[FILE_NAME]
+        try:
+            os.remove(BASE_FILES_DIR + file_name)
+            return web.json_response(text="file removed")
+        except OSError as e:
+            return web.json_response(text=f"file not found: {e}", status=404)
+
     # msg: "file deleted" or "no such file"
 
 

@@ -1,5 +1,6 @@
 import base64
 import json
+import os
 import uuid
 
 import aiohttp
@@ -12,6 +13,8 @@ from common import *
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization, hashes
 from aiohttp_session import Session
+
+CLIENT_FILES_DIR = os.path.dirname(os.path.abspath(__file__)) + '/client_docs/'
 
 
 class SessionHandler:
@@ -90,22 +93,35 @@ class SessionHandler:
             data = json.loads(await resp.text())
             print(data)
             iv = base64.b64decode(data["iv"].encode('ascii'))
-            ct = base64.b64decode(data["ct"].encode('ascii'))
             shared_key = self.get_shared_key(iv)
-            ct = decode_doc(ct, shared_key, iv)
+            ct = decode_doc(data["ct"], shared_key, data["iv"])
             print(ct)
 
-    async def add_doc(self, file_name, text):
-        pass
-        # add_doc_json = {FILE_NAME: file_name, TEXT: text}
+    async def add_doc(self, file_name):
+        try:
+            with open(CLIENT_FILES_DIR + file_name, 'r') as file:
+                text = file.read()
+                iv = os.urandom(16)
+                shared_key = self.get_shared_key(iv)
+                iv, ct = encode_doc(text, shared_key, iv)
+                add_doc_json = {FILE_NAME: file_name, CT: ct, IV: iv}
+                async with self.session.post(f'{self.url}/add_doc',
+                                             json=add_doc_json,
+                                             cookies=self.cookies) as resp:
+                    print(await resp.text())
+        except FileNotFoundError as ex:
+            print(f"no such file: {ex}")
 
-    async def update_doc(self, file_name, text):
-        pass
-        # update_doc_json = {FILE_NAME: file_name, TEXT: text}
+    async def update_doc(self, file_name):
+        await self.add_doc(file_name)
 
     async def delete_doc(self, file_name):
-        pass
-        # delete_doc_json = {FILE_NAME: file_name}
+        delete_doc_json = {FILE_NAME: file_name}
+        async with self.session.post(f'{self.url}/delete_doc',
+                                     json=delete_doc_json,
+                                     cookies=self.cookies) as resp:
+            print(resp.status)
+            print(await resp.text())
 
     async def logout(self):
         async with self.session.post(f'{self.url}/logout',

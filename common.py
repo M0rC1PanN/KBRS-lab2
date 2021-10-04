@@ -11,7 +11,8 @@ PUBLIC_KEY = 'public_key'
 SHARED_KEY = 'shared_key'
 SESSION_ID = 'session_id'
 FILE_NAME = 'file_name'
-TEXT = 'text'
+CT = "ct"
+IV = "iv"
 
 
 def encode_doc(text, shared_key, iv):
@@ -24,6 +25,8 @@ def encode_doc(text, shared_key, iv):
 
 
 def decode_doc(ct, shared_key, iv):
+    iv = base64.b64decode(iv.encode('ascii'))
+    ct = base64.b64decode(ct.encode('ascii'))
     cipher = Cipher(algorithms.AES(shared_key), modes.CFB(iv))
     decryptor = cipher.decryptor()
     ct = decryptor.update(ct) + cipher.decryptor().finalize()
