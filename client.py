@@ -136,7 +136,10 @@ async def main():
         session_handler = SessionHandler('http://0.0.0.0:8080', session)
         while True:
             method, *args = input().split()
-            await getattr(session_handler, method)(*args)
+            try:
+                await getattr(session_handler, method)(*args)
+            except AttributeError as e:
+                print(f"wrong function {e}")
 
 
 if __name__ == '__main__':
