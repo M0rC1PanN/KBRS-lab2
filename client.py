@@ -113,7 +113,19 @@ class SessionHandler:
             print(f"no such file: {ex}")
 
     async def update_doc(self, file_name):
-        await self.add_doc(file_name)
+        try:
+            with open(CLIENT_FILES_DIR + file_name, 'r') as file:
+                text = file.read()
+                iv = os.urandom(16)
+                shared_key = self.get_shared_key(iv)
+                iv, ct = encode_doc(text, shared_key, iv)
+                add_doc_json = {FILE_NAME: file_name, CT: ct, IV: iv}
+                async with self.session.post(f'{self.url}/update_doc',
+                                             json=add_doc_json,
+                                             cookies=self.cookies) as resp:
+                    print(await resp.text())
+        except FileNotFoundError as ex:
+            print(f"no such file: {ex}")
 
     async def delete_doc(self, file_name):
         delete_doc_json = {FILE_NAME: file_name}

@@ -34,6 +34,7 @@ class Server:
             web.post('/logout', self.logout),
             web.post('/get_doc', self.get_doc),
             web.post('/add_doc', self.add_doc),
+            web.post('/update_doc', self.update_doc),
             web.post('/delete_doc', self.delete_doc),
         ])
         self.users = {}
@@ -150,6 +151,25 @@ class Server:
         iv = json[IV]
         ct = json[CT]
         text = decode_doc(ct, self.get_shared_key(request, base64.b64decode(iv.encode('ascii'))), iv)
+        if os.path.isfile(BASE_FILES_DIR + file_name):
+            return web.json_response(text="file already exists", status=409)
+        with open(BASE_FILES_DIR + file_name, "wb") as f:
+            f.write(text)
+            print(text)
+        return web.json_response(text="file added")
+
+    async def update_doc(self, request):
+        if not self.check_session(request):
+            return web.json_response(
+                text=KEY_EXPIRED,
+                status=400)
+        json = await request.json()
+        file_name = json[FILE_NAME]
+        iv = json[IV]
+        ct = json[CT]
+        text = decode_doc(ct, self.get_shared_key(request, base64.b64decode(iv.encode('ascii'))), iv)
+        if not os.path.isfile(BASE_FILES_DIR + file_name):
+            return web.json_response(text="file not found", status=404)
         with open(BASE_FILES_DIR + file_name, "wb") as f:
             f.write(text)
             print(text)
@@ -167,8 +187,6 @@ class Server:
             return web.json_response(text="file removed")
         except OSError as e:
             return web.json_response(text=f"file not found: {e}", status=404)
-
-    # msg: "file deleted" or "no such file"
 
 
 if __name__ == '__main__':
