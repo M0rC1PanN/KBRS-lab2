@@ -6,3 +6,5 @@ PRIVATE_KEY = 'private_key'
 PUBLIC_KEY = 'public_key'
 SHARED_KEY = 'shared_key'
 SESSION_ID = 'session_id'
+FILE_NAME = 'file_name'
+

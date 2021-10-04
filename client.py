@@ -1,8 +1,17 @@
+import base64
+import json
+import uuid
+
 import aiohttp
 import asyncio
+
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
 from common import *
 from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import serialization, hashes
+from aiohttp_session import Session
 
 
 class SessionHandler:
@@ -10,6 +19,19 @@ class SessionHandler:
         self.url = url
         self.session = session
         self.shared_key = None
+        self.session_id = str(uuid.uuid4())
+        self.cookies = {
+            SESSION_ID: self.session_id
+        }
+
+    def get_shared_key(self, iv):
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=iv,
+            iterations=100000,
+        )
+        return kdf.derive(self.shared_key)
 
     async def echo(self, data, data2='optional data'):
         echo_json = {
@@ -27,7 +49,8 @@ class SessionHandler:
             PASSWORD: pwd,
         }
         async with self.session.post(f'{self.url}/register',
-                                     json=register_json) as resp:
+                                     json=register_json,
+                                     cookies=self.cookies) as resp:
             print(resp.status)
             print(await resp.text())
 
@@ -44,13 +67,32 @@ class SessionHandler:
             OPEN_KEY: client_public_key_decoded,
         }
         async with self.session.post(f'{self.url}/login',
-                                     json=login_json) as resp:
+                                     json=login_json,
+                                     cookies=self.cookies) as resp:
             print(resp.status)
             server_open_key = await resp.text()
             server_open_key = serialization \
                 .load_pem_public_key(server_open_key.encode("utf-8"))
         shared_key = client_private_key.exchange(ec.ECDH(), server_open_key)
         self.shared_key = shared_key
+
+    async def get_doc(self, file_name):
+        get_doc_json = {FILE_NAME: file_name}
+        async with self.session.post(f'{self.url}/get_doc',
+                                     json=get_doc_json,
+                                     cookies=self.cookies) as resp:
+            if resp.status == 404:
+                print(await resp.text())
+                return
+            data = json.loads(await resp.text())
+            print(data)
+            iv = base64.b64decode(data["iv"].encode('ascii'))
+            ct = base64.b64decode(data["ct"].encode('ascii'))
+            shared_key = self.get_shared_key(iv)
+            cipher = Cipher(algorithms.AES(shared_key), modes.CBC(iv))
+            decryptor = cipher.decryptor()
+            ct = decryptor.update(ct)
+            print(ct)
 
 
 async def main():

@@ -1,15 +1,20 @@
+import os
 import uuid
 
-from aiohttp import web
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
 from common import *
 import base64
 from cryptography import fernet
 from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import serialization, hashes
 from aiohttp import web
-from aiohttp_session import setup, get_session
+from aiohttp_session import setup, get_session, new_session
 from aiohttp_session.cookie_storage import EncryptedCookieStorage
-from typing import Callable
+import os
+
+BASE_FILES_DIR = os.path.dirname(os.path.abspath(__file__)) + '/docs/'
 
 
 class Server:
@@ -45,24 +50,39 @@ class Server:
         return web.json_response(data)
 
     async def generate_session_key(self, request, open_key):
-        session = await get_session(request)
         private_key = ec.generate_private_key(ec.SECP384R1())
         public_key = private_key.public_key()
         client_public_key = serialization.load_pem_public_key(
             open_key.encode("utf-8"))
         shared_key = private_key.exchange(ec.ECDH(), client_public_key)
-        if SESSION_ID not in session:
-            session[SESSION_ID] = str(uuid.uuid4())
-        print(session[SESSION_ID])
-        self.shared_keys[session[SESSION_ID]] = shared_key
+
+        self.shared_keys[request.cookies[SESSION_ID]] = shared_key
 
         # TODO: add key expiration
-        print(f'session key for session {session.identity} '
+        print(f'session key for session {request.cookies[SESSION_ID]} '
               f'generated successfully')
         return public_key.public_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
         ).decode("utf-8")
+
+    def get_shared_key(self, request, iv):
+        session_id = request.cookies[SESSION_ID]
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=iv,
+            iterations=100000,
+        )
+        return kdf.derive(self.shared_keys[session_id])
+
+    def encode_doc(self, text, shared_key, iv):
+        cipher = Cipher(algorithms.AES(shared_key), modes.CBC(iv))
+        encryptor = cipher.encryptor()
+        data = text.encode('ascii')
+        ct = base64.b64encode(encryptor.update(data)).decode('ascii')
+        iv = base64.b64encode(iv).decode('ascii')
+        return iv, ct
 
     async def register(self, request):
         json = await request.json()
@@ -79,14 +99,25 @@ class Server:
             return web.json_response(text='wrong password', status=404)
 
         server_public_key_decoded = await self \
-            .generate_session_key(request,  json[OPEN_KEY])
+            .generate_session_key(request, json[OPEN_KEY])
         return web.json_response(text=server_public_key_decoded)
 
     async def logout(self, request):
         pass
 
     async def get_doc(self, request):
-        pass
+        json = await request.json()
+        file_name = json[FILE_NAME]
+
+        try:
+            with open(BASE_FILES_DIR + file_name, 'r') as file:
+                iv = os.urandom(16)
+                shared_key = self.get_shared_key(request, iv)
+                text = file.read()
+                iv, ct = self.encode_doc(text, shared_key, iv)
+                return web.json_response({"iv": iv, "ct": ct})
+        except FileNotFoundError as ex:
+            return web.json_response(text=f"no such file: {ex}", status=404)
 
     async def add_doc(self, request):
         pass
