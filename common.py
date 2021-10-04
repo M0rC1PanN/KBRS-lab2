@@ -1,3 +1,8 @@
 LOGIN = 'login'
 PASSWORD = 'password'
 OPEN_KEY = 'open_key'
+SHARED_KEY = 'shared_key'
+PRIVATE_KEY = 'private_key'
+PUBLIC_KEY = 'public_key'
+SHARED_KEY = 'shared_key'
+SESSION_ID = 'session_id'
