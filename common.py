@@ -13,6 +13,7 @@ SESSION_ID = 'session_id'
 FILE_NAME = 'file_name'
 CT = "ct"
 IV = "iv"
+KEY_EXPIRED = 'Session key was not added or expired: login again.'
 
 
 def encode_doc(text, shared_key, iv):

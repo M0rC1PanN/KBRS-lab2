@@ -122,11 +122,10 @@ class Server:
         del self.session_created[session_id]
         return web.json_response(status=200)
 
-
     async def get_doc(self, request):
         if not self.check_session(request):
             return web.json_response(
-                text='Session key was not added or expired: login again.',
+                text=KEY_EXPIRED,
                 status=400)
         json = await request.json()
         file_name = json[FILE_NAME]
@@ -142,6 +141,10 @@ class Server:
             return web.json_response(text=f"no such file: {ex}", status=404)
 
     async def add_doc(self, request):
+        if not self.check_session(request):
+            return web.json_response(
+                text=KEY_EXPIRED,
+                status=400)
         json = await request.json()
         file_name = json[FILE_NAME]
         iv = json[IV]
@@ -153,6 +156,10 @@ class Server:
         return web.json_response(text="file added")
 
     async def delete_doc(self, request):
+        if not self.check_session(request):
+            return web.json_response(
+                text=KEY_EXPIRED,
+                status=400)
         json = await request.json()
         file_name = json[FILE_NAME]
         try:
