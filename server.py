@@ -113,12 +113,15 @@ class Server:
 
     async def add_doc(self, request):
         pass
+    # msg: "file added"
 
     async def update_doc(self, request):
         pass
+    # msg: "file updated" or "no such file"
 
     async def delete_doc(self, request):
         pass
+    # msg: "file deleted" or "no such file"
 
 
 if __name__ == '__main__':
