@@ -3,6 +3,8 @@ from common import *
 import time
 import base64
 from cryptography import fernet
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives import serialization
 from aiohttp import web
 from aiohttp_session import setup, get_session
 from aiohttp_session.cookie_storage import EncryptedCookieStorage
@@ -42,7 +44,8 @@ class Server:
     async def generate_session_key(self, request, open_key):
         session = await get_session(request)
         last_visit = session['last_visit'] if 'last_visit' in session else None
-        session[OPEN_KEY] = f'my beautiful key + {open_key}'
+        session[SHARED_KEY] = f'my beautiful key + {open_key}'
+        # TODO: add key expiration
         print('session key generated successfully')
 
     async def register(self, request):
@@ -58,7 +61,22 @@ class Server:
         return web.json_response(text='user registered successfully')
 
     async def login(self, request):
-        pass
+        json = await request.json()
+        print(json)
+        # user_login, pwd
+        user = self.users[json[LOGIN]]
+        if user[PASSWORD] != json[PASSWORD]:
+            return web.json_response(text='wrong password', status=404)
+        server_private_key = ec.generate_private_key(ec.SECP384R1())
+        server_public_key = server_private_key.public_key()
+        client_public_key = serialization.load_pem_public_key(json[OPEN_KEY].encode("utf-8"))
+        shared_key = server_private_key.exchange(ec.ECDH(), client_public_key)
+        await self.generate_session_key(request, shared_key)
+        return web.json_response(text=server_public_key.public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo,
+            ).decode("utf-8")
+        )
 
     async def logout(self, request):
         pass
