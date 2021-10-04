@@ -89,9 +89,7 @@ class SessionHandler:
             iv = base64.b64decode(data["iv"].encode('ascii'))
             ct = base64.b64decode(data["ct"].encode('ascii'))
             shared_key = self.get_shared_key(iv)
-            cipher = Cipher(algorithms.AES(shared_key), modes.CBC(iv))
-            decryptor = cipher.decryptor()
-            ct = decryptor.update(ct)
+            ct = decode_doc(ct, shared_key, iv)
             print(ct)
 
 

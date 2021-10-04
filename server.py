@@ -76,14 +76,6 @@ class Server:
         )
         return kdf.derive(self.shared_keys[session_id])
 
-    def encode_doc(self, text, shared_key, iv):
-        cipher = Cipher(algorithms.AES(shared_key), modes.CBC(iv))
-        encryptor = cipher.encryptor()
-        data = text.encode('ascii')
-        ct = base64.b64encode(encryptor.update(data)).decode('ascii')
-        iv = base64.b64encode(iv).decode('ascii')
-        return iv, ct
-
     async def register(self, request):
         json = await request.json()
         print(json)
@@ -114,7 +106,7 @@ class Server:
                 iv = os.urandom(16)
                 shared_key = self.get_shared_key(request, iv)
                 text = file.read()
-                iv, ct = self.encode_doc(text, shared_key, iv)
+                iv, ct = encode_doc(text, shared_key, iv)
                 return web.json_response({"iv": iv, "ct": ct})
         except FileNotFoundError as ex:
             return web.json_response(text=f"no such file: {ex}", status=404)

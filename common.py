@@ -1,3 +1,7 @@
+import base64
+
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
 LOGIN = 'login'
 PASSWORD = 'password'
 OPEN_KEY = 'open_key'
@@ -8,3 +12,18 @@ SHARED_KEY = 'shared_key'
 SESSION_ID = 'session_id'
 FILE_NAME = 'file_name'
 
+
+def encode_doc(text, shared_key, iv):
+    cipher = Cipher(algorithms.AES(shared_key), modes.CFB(iv))
+    encryptor = cipher.encryptor()
+    data = text.encode('ascii')
+    ct = base64.b64encode(encryptor.update(data) + encryptor.finalize()).decode('ascii')
+    iv = base64.b64encode(iv).decode('ascii')
+    return iv, ct
+
+
+def decode_doc(ct, shared_key, iv):
+    cipher = Cipher(algorithms.AES(shared_key), modes.CFB(iv))
+    decryptor = cipher.decryptor()
+    ct = decryptor.update(ct) + cipher.decryptor().finalize()
+    return ct
