@@ -92,6 +92,18 @@ class SessionHandler:
             ct = decode_doc(ct, shared_key, iv)
             print(ct)
 
+    async def add_doc(self, file_name, text):
+        pass
+        # add_doc_json = {FILE_NAME: file_name, TEXT: text}
+
+    async def update_doc(self, file_name, text):
+        pass
+        # update_doc_json = {FILE_NAME: file_name, TEXT: text}
+
+    async def delete_doc(self, file_name):
+        pass
+        # delete_doc_json = {FILE_NAME: file_name}
+
 
 async def main():
     async with aiohttp.ClientSession() as session:

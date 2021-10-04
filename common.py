@@ -11,6 +11,7 @@ PUBLIC_KEY = 'public_key'
 SHARED_KEY = 'shared_key'
 SESSION_ID = 'session_id'
 FILE_NAME = 'file_name'
+TEXT = 'text'
 
 
 def encode_doc(text, shared_key, iv):
