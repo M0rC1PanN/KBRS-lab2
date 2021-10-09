@@ -1,4 +1,5 @@
 import base64
+import os
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
@@ -15,12 +16,15 @@ CT = "ct"
 IV = "iv"
 KEY_EXPIRED = 'Session key was not added or expired: login again.'
 
+BASE_KEY_DIR = os.path.dirname(os.path.abspath(__file__)) + '/keys/'
+
 
 def encode_doc(text, shared_key, iv):
     cipher = Cipher(algorithms.AES(shared_key), modes.CFB(iv))
     encryptor = cipher.encryptor()
     data = text.encode('ascii')
-    ct = base64.b64encode(encryptor.update(data) + encryptor.finalize()).decode('ascii')
+    ct = base64.b64encode(encryptor.update(data) + encryptor.finalize()).decode(
+        'ascii')
     iv = base64.b64encode(iv).decode('ascii')
     return iv, ct
 

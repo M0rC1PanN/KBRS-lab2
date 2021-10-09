@@ -1,20 +1,48 @@
-import base64
 import json
-import os
 import uuid
+from getpass import getpass
 
 import aiohttp
 import asyncio
 
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
 
 from common import *
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization, hashes
-from aiohttp_session import Session
 
 CLIENT_FILES_DIR = os.path.dirname(os.path.abspath(__file__)) + '/client_docs/'
+
+
+def get_or_create_key(key_file_name):
+    private_key = ec.generate_private_key(ec.SECP384R1())
+    key_path = f'{BASE_KEY_DIR}{key_file_name}'
+    if not os.path.isfile(key_path):
+        print(f'Key not found in path {key_path}')
+        password = getpass('Password to the keyfile: ').encode('utf-8')
+
+        encrypted_pem_private_key = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.BestAvailableEncryption(
+                password)
+        )
+        with open(key_path, 'w+b') as pem_out:
+            pem_out.write(encrypted_pem_private_key)
+        print(f'The key is successfully saved to {key_path}. '
+              f'Enter the password again to get it')
+    else:
+        print(f'Key found in path {key_path}')
+    password = getpass().encode('utf-8')
+    with open(key_path, 'rb') as key_file:
+        pem_data = key_file.read()
+        try:
+            key = load_pem_private_key(pem_data, password=password)
+            return key
+        except ValueError as ex:
+            print(ex)
+            return None
 
 
 class SessionHandler:
@@ -34,39 +62,20 @@ class SessionHandler:
             salt=iv,
             iterations=100000,
         )
+        print(self.shared_key)
         return kdf.derive(self.shared_key)
 
-    async def echo(self, data, data2='optional data'):
-        echo_json = {
-            'echo': data,
-            'echo2': data2,
-        }
-        async with self.session.post(f'{self.url}/echo',
-                                     json=echo_json) as resp:
-            print(resp.status)
-            print(await resp.text())
-
-    async def register(self, user_login, pwd):
-        register_json = {
-            LOGIN: user_login,
-            PASSWORD: pwd,
-        }
-        async with self.session.post(f'{self.url}/register',
-                                     json=register_json,
-                                     cookies=self.cookies) as resp:
-            print(resp.status)
-            print(await resp.text())
-
-    async def login(self, user_login, pwd):
-        client_private_key = ec.generate_private_key(ec.SECP384R1())
+    async def login(self):
+        client_private_key = get_or_create_key('client_key')
+        if not client_private_key:
+            print('Try again')
+            return
         client_public_key = client_private_key.public_key()
         client_public_key_decoded = client_public_key.public_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo,
         ).decode("utf-8")
         login_json = {
-            LOGIN: user_login,
-            PASSWORD: pwd,
             OPEN_KEY: client_public_key_decoded,
         }
         async with self.session.post(f'{self.url}/login',
@@ -91,7 +100,6 @@ class SessionHandler:
                 print(await resp.text())
                 return
             data = json.loads(await resp.text())
-            print(data)
             iv = base64.b64decode(data["iv"].encode('ascii'))
             shared_key = self.get_shared_key(iv)
             ct = decode_doc(data["ct"], shared_key, data["iv"])
@@ -147,12 +155,15 @@ async def main():
     async with aiohttp.ClientSession() as session:
         session_handler = SessionHandler('http://0.0.0.0:8080', session)
         while True:
-            method, *args = input().split()
             try:
+                method, *args = input().split()
                 await getattr(session_handler, method)(*args)
             except AttributeError as e:
                 print(f"wrong function {e}")
-
+            except TypeError as e:
+                print(f"type error: {e}")
+            except ValueError as e:
+                print(f"value error: {e}")
 
 if __name__ == '__main__':
     loop = asyncio.get_event_loop()

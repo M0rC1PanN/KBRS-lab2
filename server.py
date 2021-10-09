@@ -1,8 +1,5 @@
-import os
-import uuid
 from datetime import datetime
 
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from common import *
@@ -11,11 +8,15 @@ from cryptography import fernet
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization, hashes
 from aiohttp import web
-from aiohttp_session import setup, get_session, new_session
+from aiohttp_session import setup
 from aiohttp_session.cookie_storage import EncryptedCookieStorage
 import os
 
 BASE_FILES_DIR = os.path.dirname(os.path.abspath(__file__)) + '/docs/'
+
+KEY_EXPIRED_JSON = web.json_response(
+    text=KEY_EXPIRED,
+    status=400)
 
 
 class Server:
@@ -27,9 +28,6 @@ class Server:
         setup(self.app, EncryptedCookieStorage(secret_key))
 
         self.app.add_routes([
-            web.get('/', self.hello),
-            web.post('/echo', self.echo),
-            web.post('/register', self.register),
             web.post('/login', self.login),
             web.post('/logout', self.logout),
             web.post('/get_doc', self.get_doc),
@@ -40,7 +38,7 @@ class Server:
         self.users = {}
         self.shared_keys = {}
         self.session_created = {}
-        self.expiration_interval_sec = 30
+        self.expiration_interval_sec = 120
 
     def run_app(self):
         web.run_app(self.app)
@@ -57,13 +55,6 @@ class Server:
             return False
         return True
 
-    async def hello(self, request):
-        return web.Response(text="Hello, world")
-
-    async def echo(self, request):
-        data = {'echo': await request.text()}
-        return web.json_response(data)
-
     async def generate_session_key(self, request, open_key):
         private_key = ec.generate_private_key(ec.SECP384R1())
         public_key = private_key.public_key()
@@ -74,7 +65,6 @@ class Server:
         self.shared_keys[request.cookies[SESSION_ID]] = shared_key
         self.session_created[request.cookies[SESSION_ID]] = datetime.now()
 
-        # TODO: add key expiration
         print(f'session key for session {request.cookies[SESSION_ID]} '
               f'generated successfully')
         return public_key.public_bytes(
@@ -92,23 +82,8 @@ class Server:
         )
         return kdf.derive(self.shared_keys[session_id])
 
-    async def register(self, request):
-        json = await request.json()
-        print(json)
-        self.users[json[LOGIN]] = json[PASSWORD]
-        print(f'user {json[LOGIN]} registered successfully')
-        return web.json_response(text='user registered successfully')
-
     async def login(self, request):
         json = await request.json()
-        print(json)
-        if not self.users.get(json[LOGIN]):
-            return web.json_response(
-                text=f'User with login {json[LOGIN]} not registered',
-                status=400)
-        user_pwd = self.users[json[LOGIN]]
-        if user_pwd != json[PASSWORD]:
-            return web.json_response(text='wrong password', status=404)
 
         server_public_key_decoded = await self \
             .generate_session_key(request, json[OPEN_KEY])
@@ -116,18 +91,14 @@ class Server:
 
     async def logout(self, request):
         if not self.check_session(request):
-            return web.json_response(
-                text='Session key was not added or expired: login again.',
-                status=400)
+            return KEY_EXPIRED_JSON
         session_id = request.cookies[SESSION_ID]
         del self.session_created[session_id]
         return web.json_response(status=200)
 
     async def get_doc(self, request):
         if not self.check_session(request):
-            return web.json_response(
-                text=KEY_EXPIRED,
-                status=400)
+            return KEY_EXPIRED_JSON
         json = await request.json()
         file_name = json[FILE_NAME]
 
@@ -143,14 +114,13 @@ class Server:
 
     async def add_doc(self, request):
         if not self.check_session(request):
-            return web.json_response(
-                text=KEY_EXPIRED,
-                status=400)
+            return KEY_EXPIRED_JSON
         json = await request.json()
         file_name = json[FILE_NAME]
         iv = json[IV]
         ct = json[CT]
-        text = decode_doc(ct, self.get_shared_key(request, base64.b64decode(iv.encode('ascii'))), iv)
+        text = decode_doc(ct, self.get_shared_key(request, base64.b64decode(
+            iv.encode('ascii'))), iv)
         if os.path.isfile(BASE_FILES_DIR + file_name):
             return web.json_response(text="file already exists", status=409)
         with open(BASE_FILES_DIR + file_name, "wb") as f:
@@ -160,26 +130,23 @@ class Server:
 
     async def update_doc(self, request):
         if not self.check_session(request):
-            return web.json_response(
-                text=KEY_EXPIRED,
-                status=400)
+            return KEY_EXPIRED_JSON
         json = await request.json()
         file_name = json[FILE_NAME]
         iv = json[IV]
         ct = json[CT]
-        text = decode_doc(ct, self.get_shared_key(request, base64.b64decode(iv.encode('ascii'))), iv)
+        text = decode_doc(ct, self.get_shared_key(request, base64.b64decode(
+            iv.encode('ascii'))), iv)
         if not os.path.isfile(BASE_FILES_DIR + file_name):
             return web.json_response(text="file not found", status=404)
         with open(BASE_FILES_DIR + file_name, "wb") as f:
             f.write(text)
             print(text)
-        return web.json_response(text="file added")
+        return web.json_response(text="file updated")
 
     async def delete_doc(self, request):
         if not self.check_session(request):
-            return web.json_response(
-                text=KEY_EXPIRED,
-                status=400)
+            return KEY_EXPIRED_JSON
         json = await request.json()
         file_name = json[FILE_NAME]
         try:
