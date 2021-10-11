@@ -73,8 +73,6 @@ class Server:
             datetime.now(),
             f'client_{open_key[27:40]}'
         )
-        print(
-            f'client public key: {self.sessions[request.cookies[SESSION_ID]].files_folder}')
 
         print(f'session key for session {request.cookies[SESSION_ID]} '
               f'generated successfully')
@@ -160,7 +158,7 @@ class Server:
             iv.encode('ascii'))), iv)
         if not os.path.isfile(self.get_file_path(request, file_name)):
             return web.json_response(text="file not found", status=404)
-        with open(BASE_FILES_DIR + file_name, "wb") as f:
+        with open(self.get_file_path(request, file_name), "wb") as f:
             f.write(text)
             print(text)
         return web.json_response(text="file updated")

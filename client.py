@@ -65,8 +65,8 @@ class SessionHandler:
         print(self.shared_key)
         return kdf.derive(self.shared_key)
 
-    async def login(self):
-        client_private_key = get_or_create_key('client_key')
+    async def login(self, key_file):
+        client_private_key = get_or_create_key(key_file)
         if not client_private_key:
             print('Try again')
             return
