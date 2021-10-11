@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime
 
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -11,6 +12,7 @@ from aiohttp import web
 from aiohttp_session import setup
 from aiohttp_session.cookie_storage import EncryptedCookieStorage
 import os
+from pathlib import Path
 
 BASE_FILES_DIR = os.path.dirname(os.path.abspath(__file__)) + '/docs/'
 
@@ -20,6 +22,12 @@ KEY_EXPIRED_JSON = web.json_response(
 
 
 class Server:
+    @dataclass
+    class Session:
+        shared_key: bytes
+        session_created: datetime
+        files_folder: str
+
     def __init__(self):
         self.app = web.Application()
 
@@ -35,9 +43,7 @@ class Server:
             web.post('/update_doc', self.update_doc),
             web.post('/delete_doc', self.delete_doc),
         ])
-        self.users = {}
-        self.shared_keys = {}
-        self.session_created = {}
+        self.sessions = {}
         self.expiration_interval_sec = 120
 
     def run_app(self):
@@ -45,11 +51,12 @@ class Server:
 
     def check_session(self, request):
         session_id = request.cookies.get(SESSION_ID)
-        if session_id not in self.shared_keys or \
-                session_id not in self.session_created:
+        if session_id not in self.sessions or \
+                session_id not in self.sessions:
             return False
         sub_seconds_active = \
-            (datetime.now() - self.session_created[session_id]).total_seconds()
+            (datetime.now() - self.sessions[
+                session_id].session_created).total_seconds()
         print(f'active: {sub_seconds_active}')
         if sub_seconds_active > self.expiration_interval_sec:
             return False
@@ -61,9 +68,13 @@ class Server:
         client_public_key = serialization.load_pem_public_key(
             open_key.encode("utf-8"))
         shared_key = private_key.exchange(ec.ECDH(), client_public_key)
-
-        self.shared_keys[request.cookies[SESSION_ID]] = shared_key
-        self.session_created[request.cookies[SESSION_ID]] = datetime.now()
+        self.sessions[request.cookies[SESSION_ID]] = Server.Session(
+            shared_key,
+            datetime.now(),
+            f'client_{open_key[27:40]}'
+        )
+        print(
+            f'client public key: {self.sessions[request.cookies[SESSION_ID]].files_folder}')
 
         print(f'session key for session {request.cookies[SESSION_ID]} '
               f'generated successfully')
@@ -80,7 +91,15 @@ class Server:
             salt=iv,
             iterations=100000,
         )
-        return kdf.derive(self.shared_keys[session_id])
+        return kdf.derive(self.sessions[session_id].shared_key)
+
+    def get_file_path(self, request, file_name):
+        folder_name = self.sessions[request.cookies[SESSION_ID]].files_folder
+        return f'{BASE_FILES_DIR}{folder_name}/{file_name}'
+
+    def get_dir_path(self, request):
+        folder_name = self.sessions[request.cookies[SESSION_ID]].files_folder
+        return f'{BASE_FILES_DIR}{folder_name}'
 
     async def login(self, request):
         json = await request.json()
@@ -93,7 +112,7 @@ class Server:
         if not self.check_session(request):
             return KEY_EXPIRED_JSON
         session_id = request.cookies[SESSION_ID]
-        del self.session_created[session_id]
+        del self.sessions[session_id]
         return web.json_response(status=200)
 
     async def get_doc(self, request):
@@ -103,7 +122,7 @@ class Server:
         file_name = json[FILE_NAME]
 
         try:
-            with open(BASE_FILES_DIR + file_name, 'r') as file:
+            with open(self.get_file_path(request, file_name), 'r') as file:
                 iv = os.urandom(16)
                 shared_key = self.get_shared_key(request, iv)
                 text = file.read()
@@ -121,9 +140,11 @@ class Server:
         ct = json[CT]
         text = decode_doc(ct, self.get_shared_key(request, base64.b64decode(
             iv.encode('ascii'))), iv)
-        if os.path.isfile(BASE_FILES_DIR + file_name):
+        Path(self.get_dir_path(request)).mkdir(exist_ok=True)
+        file_path = self.get_file_path(request, file_name)
+        if os.path.isfile(file_path):
             return web.json_response(text="file already exists", status=409)
-        with open(BASE_FILES_DIR + file_name, "wb") as f:
+        with open(file_path, "wb") as f:
             f.write(text)
             print(text)
         return web.json_response(text="file added")
@@ -137,7 +158,7 @@ class Server:
         ct = json[CT]
         text = decode_doc(ct, self.get_shared_key(request, base64.b64decode(
             iv.encode('ascii'))), iv)
-        if not os.path.isfile(BASE_FILES_DIR + file_name):
+        if not os.path.isfile(self.get_file_path(request, file_name)):
             return web.json_response(text="file not found", status=404)
         with open(BASE_FILES_DIR + file_name, "wb") as f:
             f.write(text)
@@ -150,7 +171,7 @@ class Server:
         json = await request.json()
         file_name = json[FILE_NAME]
         try:
-            os.remove(BASE_FILES_DIR + file_name)
+            os.remove(self.get_file_path(request, file_name))
             return web.json_response(text="file removed")
         except OSError as e:
             return web.json_response(text=f"file not found: {e}", status=404)
